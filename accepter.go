@@ -12,7 +12,7 @@ import (
 )
 
 // An Accepter defines parameters to accept connections. It seems like
-// golangs native http.Server.
+// GoLang's http.Server.
 type Accepter struct {
 	// Handler to invoke.
 	Handler Handler
@@ -173,7 +173,7 @@ func (a *Accepter) Serve(l net.Listener) (err error) {
 //
 // Additionally, files containing a certificate and matching private key for
 // the Accepter must be provided if neither the Accepter's TLSConfig.Certificates
-// nor TLSConfig.GetCertificate are populated.. If the certificate is signed by
+// nor TLSConfig.GetCertificate are populated. If the certificate is signed by
 // a certificate authority, the certFile should be the concatenation of the
 // Accepter's certificate, any intermediates, and the CA's certificate.
 func (a *Accepter) ServeTLS(l net.Listener, certFile, keyFile string) (err error) {
