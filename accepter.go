@@ -4,7 +4,6 @@ package accepter
 import (
 	"context"
 	"crypto/tls"
-	"io/ioutil"
 	"log"
 	"net"
 	"sync"
@@ -204,15 +203,11 @@ func (a *Accepter) serve(conn net.Conn) {
 	a.connsMu.Unlock()
 
 	if a.Handler != nil {
-		errorLog := a.ErrorLog
-		if errorLog == nil {
-			errorLog = log.New(ioutil.Discard, "", log.LstdFlags)
-		}
 		func() {
 			defer func() {
 				e := recover()
-				if e != nil {
-					errorLog.Print(e)
+				if e != nil && a.ErrorLog != nil {
+					a.ErrorLog.Println(e)
 				}
 			}()
 			a.Handler.Serve(conn, closeCh)
