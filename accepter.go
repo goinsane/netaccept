@@ -4,7 +4,6 @@ package accepter
 import (
 	"context"
 	"crypto/tls"
-	"io/ioutil"
 	"log"
 	"net"
 	"sync"
@@ -46,11 +45,11 @@ type connData struct {
 // immediately return nil. Make sure the program doesn't exit and waits
 // instead for Shutdown to return.
 func (a *Accepter) Shutdown(ctx context.Context) (err error) {
-	err = a.l.Close()
 	select {
 	case a.closeCh <- struct{}{}:
 	default:
 	}
+	err = a.l.Close()
 
 	a.connsMu.RLock()
 	for _, c := range a.conns {
@@ -88,11 +87,11 @@ func (a *Accepter) Shutdown(ctx context.Context) (err error) {
 // Close returns any error returned from closing the Accepter's underlying
 // Listener.
 func (a *Accepter) Close() (err error) {
-	err = a.l.Close()
 	select {
 	case a.closeCh <- struct{}{}:
 	default:
 	}
+	err = a.l.Close()
 
 	a.connsMu.RLock()
 	for _, c := range a.conns {
@@ -204,15 +203,11 @@ func (a *Accepter) serve(conn net.Conn) {
 	a.connsMu.Unlock()
 
 	if a.Handler != nil {
-		errorLog := a.ErrorLog
-		if errorLog == nil {
-			errorLog = log.New(ioutil.Discard, "", log.LstdFlags)
-		}
 		func() {
 			defer func() {
 				e := recover()
-				if e != nil {
-					errorLog.Print(e)
+				if e != nil && a.ErrorLog != nil {
+					a.ErrorLog.Println(e)
 				}
 			}()
 			a.Handler.Serve(conn, closeCh)
