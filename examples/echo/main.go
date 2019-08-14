@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
 
@@ -11,18 +12,19 @@ import (
 
 func main() {
 	a := &accepter.Accepter{
-		Handler: accepter.HandlerFunc(func(conn net.Conn, closeCh <-chan struct{}) {
+		Handler: accepter.HandlerFunc(func(ctx context.Context, conn net.Conn) {
 			for {
-				var b [1]byte
+				var b [32 * 1024]byte
 				n, err := conn.Read(b[:])
 				if err != nil {
 					break
 				}
-				if n > 0 {
-					n, err := conn.Write(b[:])
-					if err != nil || n < 1 {
-						break
-					}
+				m, err := conn.Write(b[:n])
+				if err != nil {
+					break
+				}
+				if m < n {
+					break
 				}
 			}
 		}),

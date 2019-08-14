@@ -1,18 +1,21 @@
 package accepter
 
-import "net"
+import (
+	"context"
+	"net"
+)
 
 // A Handler responds to an incoming connection.
 type Handler interface {
-	Serve(conn net.Conn, closeCh <-chan struct{})
+	Serve(ctx context.Context, conn net.Conn)
 }
 
 // The HandlerFunc type is an adapter to allow the use of ordinary functions as
 // handlers. If f is a function with the appropriate signature, HandlerFunc(f)
 // is a Handler that calls f.
-type HandlerFunc func(conn net.Conn, closeCh <-chan struct{})
+type HandlerFunc func(ctx context.Context, conn net.Conn)
 
-// Serve calls f(conn, closeCh)
-func (f HandlerFunc) Serve(conn net.Conn, closeCh <-chan struct{}) {
-	f(conn, closeCh)
+// Serve calls f(ctx, conn)
+func (f HandlerFunc) Serve(ctx context.Context, conn net.Conn) {
+	f(ctx, conn)
 }

@@ -4,7 +4,6 @@ package accepter
 import (
 	"context"
 	"crypto/tls"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -19,23 +18,21 @@ type Accepter struct {
 	// TLSConfig optionally provides a TLS configuration.
 	TLSConfig *tls.Config
 
-	// ErrorLog specifies an optional logger for errors in Handler.
-	ErrorLog *log.Logger
-
-	l       net.Listener
-	conns   map[net.Conn]connData
-	connsMu sync.RWMutex
-	closeCh chan struct{}
+	lis         net.Listener
+	ctx         context.Context
+	ctxCancel   context.CancelFunc
+	connDatas   map[net.Conn]connData
+	connDatasMu sync.RWMutex
 }
 
 type connData struct {
-	conn    net.Conn
-	closeCh chan struct{}
+	ctx  context.Context
+	conn net.Conn
 }
 
 // Shutdown gracefully shuts down the Accepter without interrupting any
 // connections. Shutdown works by first closing the Accepter's underlying Listener, then
-// fills closeCh on Serve method of Handler, and then waiting indefinitely for
+// cancels the context on Serve method of Handler, and then waiting indefinitely for
 // connections to exit Serve method of Handler and then close. If the provided
 // context expires before the shutdown is complete, Shutdown returns the
 // context's error, otherwise it returns any error returned from closing the
@@ -45,36 +42,24 @@ type connData struct {
 // immediately return nil. Make sure the program doesn't exit and waits
 // instead for Shutdown to return.
 func (a *Accepter) Shutdown(ctx context.Context) (err error) {
-	select {
-	case a.closeCh <- struct{}{}:
-	default:
-	}
-	err = a.l.Close()
-
-	a.connsMu.RLock()
-	for _, c := range a.conns {
-		select {
-		case c.closeCh <- struct{}{}:
-		default:
-		}
-	}
-	a.connsMu.RUnlock()
+	a.ctxCancel()
+	err = a.lis.Close()
 
 	for {
 		select {
 		case <-time.After(5 * time.Millisecond):
-			a.connsMu.RLock()
-			if len(a.conns) == 0 {
-				a.connsMu.RUnlock()
+			a.connDatasMu.RLock()
+			if len(a.connDatas) == 0 {
+				a.connDatasMu.RUnlock()
 				return
 			}
-			a.connsMu.RUnlock()
+			a.connDatasMu.RUnlock()
 		case <-ctx.Done():
-			a.connsMu.RLock()
-			for _, c := range a.conns {
+			a.connDatasMu.RLock()
+			for _, c := range a.connDatas {
 				c.conn.Close()
 			}
-			a.connsMu.RUnlock()
+			a.connDatasMu.RUnlock()
 			err = ctx.Err()
 			return
 		}
@@ -87,21 +72,14 @@ func (a *Accepter) Shutdown(ctx context.Context) (err error) {
 // Close returns any error returned from closing the Accepter's underlying
 // Listener.
 func (a *Accepter) Close() (err error) {
-	select {
-	case a.closeCh <- struct{}{}:
-	default:
-	}
-	err = a.l.Close()
+	a.ctxCancel()
+	err = a.lis.Close()
 
-	a.connsMu.RLock()
-	for _, c := range a.conns {
-		select {
-		case c.closeCh <- struct{}{}:
-		default:
-		}
+	a.connDatasMu.RLock()
+	for _, c := range a.connDatas {
 		c.conn.Close()
 	}
-	a.connsMu.RUnlock()
+	a.connDatasMu.RUnlock()
 
 	return
 }
@@ -134,23 +112,22 @@ func (a *Accepter) TCPListenAndServeTLS(addr string, certFile, keyFile string) e
 	return a.ServeTLS(l, certFile, keyFile)
 }
 
-// Serve accepts incoming connections on the Listener l, creating a new service
+// Serve accepts incoming connections on the Listener lis, creating a new service
 // goroutine for each. The service goroutines read requests and then call
 // a.Handler to reply to them. Serve returns a nil error after Close or
 // Shutdown method called.
-func (a *Accepter) Serve(l net.Listener) (err error) {
-	a.l = l
-	a.conns = make(map[net.Conn]connData)
-	a.closeCh = make(chan struct{}, 1)
-	defer func() {
-		a.l.Close()
-	}()
+func (a *Accepter) Serve(lis net.Listener) (err error) {
+	a.lis = lis
+	defer a.lis.Close()
+	a.ctx, a.ctxCancel = context.WithCancel(context.Background())
+	defer a.ctxCancel()
+	a.connDatas = make(map[net.Conn]connData)
 	for {
 		var conn net.Conn
-		conn, err = l.Accept()
+		conn, err = lis.Accept()
 		if err != nil {
 			select {
-			case <-a.closeCh:
+			case <-a.ctx.Done():
 				err = nil
 				return
 			default:
@@ -193,30 +170,21 @@ func (a *Accepter) ServeTLS(l net.Listener, certFile, keyFile string) (err error
 }
 
 func (a *Accepter) serve(conn net.Conn) {
-	closeCh := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(a.ctx)
+	defer cancel()
 
-	a.connsMu.Lock()
-	a.conns[conn] = connData{
-		conn:    conn,
-		closeCh: closeCh,
+	a.connDatasMu.Lock()
+	a.connDatas[conn] = connData{
+		ctx:  ctx,
+		conn: conn,
 	}
-	a.connsMu.Unlock()
+	a.connDatasMu.Unlock()
 
-	if a.Handler != nil {
-		func() {
-			defer func() {
-				e := recover()
-				if e != nil && a.ErrorLog != nil {
-					a.ErrorLog.Println(e)
-				}
-			}()
-			a.Handler.Serve(conn, closeCh)
-		}()
-	}
+	a.Handler.Serve(ctx, conn)
 
 	conn.Close()
 
-	a.connsMu.Lock()
-	delete(a.conns, conn)
-	a.connsMu.Unlock()
+	a.connDatasMu.Lock()
+	delete(a.connDatas, conn)
+	a.connDatasMu.Unlock()
 }
