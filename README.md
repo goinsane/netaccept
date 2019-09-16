@@ -11,3 +11,5 @@ It is similar with GoLang's http.Server.
 * changed Handler.Serve arguments to (ctx, conn) from (conn, closeCh)
 * removed panic recovering for Handler.Serve(...)
 * removed Accepter.ErrorLog
+* removed TCPListenAndServe and TCPListenAndServeTLS
+* added ListenAndServe and ListenAndServeTLS

@@ -29,5 +29,5 @@ func main() {
 			}
 		}),
 	}
-	log.Fatal(a.TCPListenAndServe(":1234"))
+	log.Fatal(a.ListenAndServe("tcp", ":1234"))
 }
