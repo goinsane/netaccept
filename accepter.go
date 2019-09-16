@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// An Accepter defines parameters to accept connections. It seems like
-// GoLang's http.Server.
+// An Accepter defines parameters to accept connections.
+// It is similar with GoLang's http.Server.
 type Accepter struct {
 	// Handler to invoke.
 	Handler Handler
