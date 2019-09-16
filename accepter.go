@@ -113,7 +113,6 @@ func (a *Accepter) TCPListenAndServeTLS(addr string, certFile, keyFile string) e
 // Shutdown method called.
 func (a *Accepter) Serve(lis net.Listener) (err error) {
 	a.lis = lis
-	defer a.lis.Close()
 	a.ctx, a.ctxCancel = context.WithCancel(context.Background())
 	defer a.ctxCancel()
 	a.conns = make(map[net.Conn]struct{})
