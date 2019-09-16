@@ -18,16 +18,11 @@ type Accepter struct {
 	// TLSConfig optionally provides a TLS configuration.
 	TLSConfig *tls.Config
 
-	lis         net.Listener
-	ctx         context.Context
-	ctxCancel   context.CancelFunc
-	connDatas   map[net.Conn]connData
-	connDatasMu sync.RWMutex
-}
-
-type connData struct {
-	ctx  context.Context
-	conn net.Conn
+	lis       net.Listener
+	ctx       context.Context
+	ctxCancel context.CancelFunc
+	conns     map[net.Conn]struct{}
+	connsMu   sync.RWMutex
 }
 
 // Shutdown gracefully shuts down the Accepter without interrupting any
@@ -48,18 +43,18 @@ func (a *Accepter) Shutdown(ctx context.Context) (err error) {
 	for {
 		select {
 		case <-time.After(5 * time.Millisecond):
-			a.connDatasMu.RLock()
-			if len(a.connDatas) == 0 {
-				a.connDatasMu.RUnlock()
+			a.connsMu.RLock()
+			if len(a.conns) == 0 {
+				a.connsMu.RUnlock()
 				return
 			}
-			a.connDatasMu.RUnlock()
+			a.connsMu.RUnlock()
 		case <-ctx.Done():
-			a.connDatasMu.RLock()
-			for _, c := range a.connDatas {
-				c.conn.Close()
+			a.connsMu.RLock()
+			for conn := range a.conns {
+				conn.Close()
 			}
-			a.connDatasMu.RUnlock()
+			a.connsMu.RUnlock()
 			err = ctx.Err()
 			return
 		}
@@ -75,11 +70,11 @@ func (a *Accepter) Close() (err error) {
 	a.ctxCancel()
 	err = a.lis.Close()
 
-	a.connDatasMu.RLock()
-	for _, c := range a.connDatas {
-		c.conn.Close()
+	a.connsMu.RLock()
+	for conn := range a.conns {
+		conn.Close()
 	}
-	a.connDatasMu.RUnlock()
+	a.connsMu.RUnlock()
 
 	return
 }
@@ -121,7 +116,7 @@ func (a *Accepter) Serve(lis net.Listener) (err error) {
 	defer a.lis.Close()
 	a.ctx, a.ctxCancel = context.WithCancel(context.Background())
 	defer a.ctxCancel()
-	a.connDatas = make(map[net.Conn]connData)
+	a.conns = make(map[net.Conn]struct{})
 	for {
 		var conn net.Conn
 		conn, err = lis.Accept()
@@ -170,21 +165,15 @@ func (a *Accepter) ServeTLS(l net.Listener, certFile, keyFile string) (err error
 }
 
 func (a *Accepter) serve(conn net.Conn) {
-	ctx, cancel := context.WithCancel(a.ctx)
-	defer cancel()
+	a.connsMu.Lock()
+	a.conns[conn] = struct{}{}
+	a.connsMu.Unlock()
 
-	a.connDatasMu.Lock()
-	a.connDatas[conn] = connData{
-		ctx:  ctx,
-		conn: conn,
-	}
-	a.connDatasMu.Unlock()
-
-	a.Handler.Serve(ctx, conn)
+	a.Handler.Serve(a.ctx, conn)
 
 	conn.Close()
 
-	a.connDatasMu.Lock()
-	delete(a.connDatas, conn)
-	a.connDatasMu.Unlock()
+	a.connsMu.Lock()
+	delete(a.conns, conn)
+	a.connsMu.Unlock()
 }
