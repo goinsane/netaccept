@@ -148,10 +148,13 @@ func (a *Accepter) Serve(lis net.Listener) (err error) {
 // a certificate authority, the certFile should be the concatenation of the
 // Accepter's certificate, any intermediates, and the CA's certificate.
 func (a *Accepter) ServeTLS(l net.Listener, certFile, keyFile string) (err error) {
-	config := a.TLSConfig
-	if config == nil {
+	var config *tls.Config
+	if a.TLSConfig != nil {
+		config = a.TLSConfig.Clone()
+	} else {
 		config = &tls.Config{}
 	}
+
 	configHasCert := len(config.Certificates) > 0 || config.GetCertificate != nil
 	if !configHasCert || certFile != "" || keyFile != "" {
 		config.Certificates = make([]tls.Certificate, 1)
@@ -160,6 +163,7 @@ func (a *Accepter) ServeTLS(l net.Listener, certFile, keyFile string) (err error
 			return
 		}
 	}
+
 	tlsListener := tls.NewListener(l, config)
 	return a.Serve(tlsListener)
 }
