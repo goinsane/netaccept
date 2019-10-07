@@ -5,7 +5,7 @@
 Package accepter provides an Accepter and utilities for net.Listener.
 It is similar with GoLang's http.Server.
 
-## Changes from v1
+## v1.2 changes from v1.0
 
 * using cancelling context instead of channel
 * changed Handler.Serve arguments to (ctx, conn) from (conn, closeCh)
