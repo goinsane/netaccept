@@ -13,3 +13,4 @@ It is similar with GoLang's http.Server.
 * removed Accepter.ErrorLog
 * removed TCPListenAndServe and TCPListenAndServeTLS
 * added ListenAndServe and ListenAndServeTLS
+* added go.mod support
