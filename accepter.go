@@ -18,11 +18,13 @@ type Accepter struct {
 	// TLSConfig optionally provides a TLS configuration.
 	TLSConfig *tls.Config
 
-	lis       net.Listener
-	ctx       context.Context
-	ctxCancel context.CancelFunc
-	conns     map[net.Conn]struct{}
-	connsMu   sync.RWMutex
+	lis          net.Listener
+	lisCloseOnce *sync.Once
+	lisCloseErr  error
+	ctx          context.Context
+	ctxCancel    context.CancelFunc
+	conns        map[net.Conn]struct{}
+	connsMu      sync.RWMutex
 }
 
 // Shutdown gracefully shuts down the Accepter without interrupting any
@@ -38,7 +40,7 @@ type Accepter struct {
 // instead for Shutdown to return.
 func (a *Accepter) Shutdown(ctx context.Context) (err error) {
 	a.ctxCancel()
-	err = a.lis.Close()
+	err = a.lisClose()
 
 	for {
 		select {
@@ -68,7 +70,7 @@ func (a *Accepter) Shutdown(ctx context.Context) (err error) {
 // Listener.
 func (a *Accepter) Close() (err error) {
 	a.ctxCancel()
-	err = a.lis.Close()
+	err = a.lisClose()
 
 	a.connsMu.RLock()
 	for conn := range a.conns {
@@ -77,6 +79,13 @@ func (a *Accepter) Close() (err error) {
 	a.connsMu.RUnlock()
 
 	return
+}
+
+func (a *Accepter) lisClose() error {
+	a.lisCloseOnce.Do(func() {
+		a.lisCloseErr = a.lis.Close()
+	})
+	return a.lisCloseErr
 }
 
 // ListenAndServe listens on the given network and address; and then calls
@@ -113,6 +122,8 @@ func (a *Accepter) ListenAndServeTLS(network, address string, certFile, keyFile 
 // Shutdown method called.
 func (a *Accepter) Serve(lis net.Listener) (err error) {
 	a.lis = lis
+	a.lisCloseOnce = new(sync.Once)
+	defer a.lisClose()
 	a.ctx, a.ctxCancel = context.WithCancel(context.Background())
 	defer a.ctxCancel()
 	a.conns = make(map[net.Conn]struct{})
