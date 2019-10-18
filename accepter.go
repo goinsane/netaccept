@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -18,9 +17,6 @@ type Accepter struct {
 
 	// TLSConfig optionally provides a TLS configuration.
 	TLSConfig *tls.Config
-
-	// TemporaryErrorCount increments each temporary accept error
-	TemporaryErrorCount uint64
 
 	lis          net.Listener
 	lisCloseOnce *sync.Once
@@ -145,7 +141,6 @@ func (a *Accepter) Serve(lis net.Listener) (err error) {
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
 				if tempDelay == 0 {
 					tempDelay = 5 * time.Millisecond
-					atomic.AddUint64(&a.TemporaryErrorCount, 1)
 				} else {
 					tempDelay *= 2
 				}
