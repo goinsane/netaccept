@@ -7,7 +7,7 @@ import (
 	"log"
 	"net"
 
-	accepter "github.com/orkunkaraduman/go-accepter"
+	"github.com/goinsane/accepter"
 )
 
 func main() {
