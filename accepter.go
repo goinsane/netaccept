@@ -119,6 +119,7 @@ func (a *Accepter) ListenAndServe(network, address string) error {
 	if err != nil {
 		return err
 	}
+	defer lis.Close()
 	return a.Serve(lis)
 }
 
@@ -136,6 +137,7 @@ func (a *Accepter) ListenAndServeTLS(network, address string, certFile, keyFile 
 	if err != nil {
 		return err
 	}
+	defer lis.Close()
 	return a.ServeTLS(lis, certFile, keyFile)
 }
 
