@@ -4,6 +4,7 @@ package accepter
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,7 @@ type Accepter struct {
 	// TLSConfig optionally provides a TLS configuration.
 	TLSConfig *tls.Config
 
+	mu           sync.RWMutex
 	lis          net.Listener
 	lisCloseOnce *sync.Once
 	lisCloseErr  error
@@ -29,6 +31,11 @@ type Accepter struct {
 }
 
 var (
+	// ErrAlreadyServed is returned when Serve method has been already called.
+	ErrAlreadyServed = errors.New("accepter has already served")
+)
+
+var (
 	maxTempDelay time.Duration
 )
 
@@ -36,6 +43,20 @@ var (
 // Zero or negative values mean to wait forever. By default, zero.
 func SetMaxTempDelay(d time.Duration) {
 	atomic.StoreInt64((*int64)(&maxTempDelay), int64(d))
+}
+
+// cancel cancels serving operation and closes listener once, then returns closing error.
+func (a *Accepter) cancel() error {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.lis == nil {
+		return nil
+	}
+	a.ctxCancel()
+	a.lisCloseOnce.Do(func() {
+		a.lisCloseErr = a.lis.Close()
+	})
+	return a.lisCloseErr
 }
 
 // Shutdown gracefully shuts down the Accepter without interrupting any
@@ -50,8 +71,7 @@ func SetMaxTempDelay(d time.Duration) {
 // immediately return nil. Make sure the program doesn't exit and waits
 // instead for Shutdown to return.
 func (a *Accepter) Shutdown(ctx context.Context) (err error) {
-	a.ctxCancel()
-	err = a.lisClose()
+	a.cancel()
 
 	for {
 		select {
@@ -80,8 +100,7 @@ func (a *Accepter) Shutdown(ctx context.Context) (err error) {
 // Close returns any error returned from closing the Accepter's underlying
 // Listener.
 func (a *Accepter) Close() (err error) {
-	a.ctxCancel()
-	err = a.lisClose()
+	a.cancel()
 
 	a.connsMu.RLock()
 	for conn := range a.conns {
@@ -90,13 +109,6 @@ func (a *Accepter) Close() (err error) {
 	a.connsMu.RUnlock()
 
 	return
-}
-
-func (a *Accepter) lisClose() error {
-	a.lisCloseOnce.Do(func() {
-		a.lisCloseErr = a.lis.Close()
-	})
-	return a.lisCloseErr
 }
 
 // ListenAndServe listens on the given network and address; and then calls
@@ -132,12 +144,23 @@ func (a *Accepter) ListenAndServeTLS(network, address string, certFile, keyFile 
 // a.Handler to reply to them. Serve returns a nil error after Close or
 // Shutdown method called.
 func (a *Accepter) Serve(lis net.Listener) (err error) {
+	a.mu.Lock()
+	if a.lis != nil {
+		err = ErrAlreadyServed
+		a.mu.Unlock()
+		return
+	}
 	a.lis = lis
 	a.lisCloseOnce = new(sync.Once)
-	defer a.lisClose()
 	a.ctx, a.ctxCancel = context.WithCancel(context.Background())
-	defer a.ctxCancel()
+	a.mu.Unlock()
+
+	a.connsMu.Lock()
 	a.conns = make(map[net.Conn]struct{})
+	a.connsMu.Unlock()
+
+	defer a.cancel()
+
 	var tempDelay, totalDelay time.Duration
 	for {
 		var conn net.Conn
