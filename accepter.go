@@ -124,7 +124,7 @@ func (a *Accepter) ListenAndServe(network, address string) error {
 }
 
 // ListenAndServeTLS listens on the given network and address; and
-// then calls Serve to handle incoming TLS connections.
+// then calls ServeTLS to handle incoming TLS connections.
 //
 // Filenames containing a certificate and matching private key for the
 // Accepter must be provided if neither the Accepter's TLSConfig.Certificates
@@ -143,7 +143,8 @@ func (a *Accepter) ListenAndServeTLS(network, address string, certFile, keyFile 
 
 // Serve accepts incoming connections on the Listener lis, creating a new service
 // goroutine for each. The service goroutines read requests and then call
-// a.Handler to reply to them. Serve returns a nil error after Close or
+// a.Handler to reply to them. Serve always closes lis if returned error
+// is not ErrAlreadyServed. Serve returns a nil error after Close or
 // Shutdown method called.
 func (a *Accepter) Serve(lis net.Listener) (err error) {
 	a.mu.Lock()
