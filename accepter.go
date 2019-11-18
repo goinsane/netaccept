@@ -71,7 +71,7 @@ func (a *Accepter) cancel() error {
 // immediately return nil. Make sure the program doesn't exit and waits
 // instead for Shutdown to return.
 func (a *Accepter) Shutdown(ctx context.Context) (err error) {
-	a.cancel()
+	err = a.cancel()
 
 	for {
 		select {
@@ -100,7 +100,7 @@ func (a *Accepter) Shutdown(ctx context.Context) (err error) {
 // Close returns any error returned from closing the Accepter's underlying
 // Listener.
 func (a *Accepter) Close() (err error) {
-	a.cancel()
+	err = a.cancel()
 
 	a.connsMu.RLock()
 	for conn := range a.conns {
