@@ -137,8 +137,8 @@ func (a *Accepter) ListenAndServeTLS(network, address string, certFile, keyFile 
 
 // Serve accepts incoming connections on the Listener lis, creating a new service
 // goroutine for each. The service goroutines read requests and then call
-// a.Handler to reply to them. Serve always closes lis if returned error
-// is not ErrAlreadyServed. Serve returns a nil error after Close or
+// a.Handler to reply to them. Serve always closes lis unless returned error
+// is ErrAlreadyServed. Serve returns a nil error after Close or
 // Shutdown method called.
 func (a *Accepter) Serve(lis net.Listener) (err error) {
 	a.mu.Lock()
@@ -196,8 +196,8 @@ func (a *Accepter) Serve(lis net.Listener) (err error) {
 
 // ServeTLS accepts incoming connections on the Listener lis, creating a
 // new service goroutine for each. The service goroutines read requests and
-// then call a.Handler to reply to them. ServeTLS always closes lis if returned error
-// is not ErrAlreadyServed or as TLSError. ServeTLS returns a nil error after
+// then call a.Handler to reply to them. ServeTLS always closes lis unless returned error
+// is ErrAlreadyServed or as TLSError. ServeTLS returns a nil error after
 // Close or Shutdown method called.
 //
 // Additionally, files containing a certificate and matching private key for
