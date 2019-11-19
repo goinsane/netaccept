@@ -4,7 +4,6 @@ package accepter
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -29,11 +28,6 @@ type Accepter struct {
 	conns        map[net.Conn]struct{}
 	connsMu      sync.RWMutex
 }
-
-var (
-	// ErrAlreadyServed is returned when Serve method has been already called.
-	ErrAlreadyServed = errors.New("accepter has already served")
-)
 
 var (
 	maxTempDelay time.Duration
@@ -202,7 +196,8 @@ func (a *Accepter) Serve(lis net.Listener) (err error) {
 
 // ServeTLS accepts incoming connections on the Listener lis, creating a
 // new service goroutine for each. The service goroutines read requests and
-// then call a.Handler to reply to them. ServeTLS returns a nil error after
+// then call a.Handler to reply to them. ServeTLS always closes lis if returned error
+// is not ErrAlreadyServed or as TLSError. ServeTLS returns a nil error after
 // Close or Shutdown method called.
 //
 // Additionally, files containing a certificate and matching private key for
@@ -223,6 +218,7 @@ func (a *Accepter) ServeTLS(lis net.Listener, certFile, keyFile string) (err err
 		config.Certificates = make([]tls.Certificate, 1)
 		config.Certificates[0], err = tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
+			err = wrapTLSError(err)
 			return
 		}
 	}
