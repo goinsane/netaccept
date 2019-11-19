@@ -5,6 +5,11 @@ import (
 	"fmt"
 )
 
+var (
+	// ErrAlreadyServed is returned when Serve or ServeTLS method has been already called
+	ErrAlreadyServed = errors.New("the accepter has already served")
+)
+
 // TLSError is returned when a method fails with TLS error
 type TLSError struct {
 	err error
@@ -29,8 +34,3 @@ func (e *TLSError) Error() string {
 func (e *TLSError) Unwrap() error {
 	return e.err
 }
-
-var (
-	// ErrAlreadyServed is returned when Serve or ServeTLS method has been already called
-	ErrAlreadyServed = errors.New("the accepter has already served")
-)
