@@ -1,8 +1,8 @@
-# accepter
+# netaccept
 
-[![GoDoc](https://godoc.org/github.com/goinsane/accepter?status.svg)](https://godoc.org/github.com/goinsane/accepter)
+[![GoDoc](https://godoc.org/github.com/goinsane/netaccept?status.svg)](https://godoc.org/github.com/goinsane/netaccept)
 
-Package accepter provides an Accepter and utilities for net.Listener.
+Package netaccept provides utilities for accepting connections from net.Listener.
 It is similar with GoLang's http.Server.
 
 ## v1.2 changes from v1.0

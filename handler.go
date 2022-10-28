@@ -1,4 +1,4 @@
-package accepter
+package netaccept
 
 import (
 	"context"

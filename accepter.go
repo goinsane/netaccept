@@ -1,5 +1,5 @@
-// Package accepter provides an Accepter and utilities for net.Listener.
-package accepter
+// Package netaccept provides utilities for accepting connections from net.Listener.
+package netaccept
 
 import (
 	"context"
