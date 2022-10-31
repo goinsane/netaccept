@@ -1,3 +1,3 @@
-module github.com/goinsane/accepter
+module github.com/goinsane/netaccept
 
-go 1.1
+go 1.8
