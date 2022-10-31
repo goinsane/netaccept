@@ -1,4 +1,4 @@
-// Package netaccept provides utilities for accepting connections from net.Listener.
+// Package netaccept provides NetAccept struct for accepting connections from net.Listener.
 package netaccept
 
 import (
