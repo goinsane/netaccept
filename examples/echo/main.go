@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 package main
@@ -7,12 +8,12 @@ import (
 	"log"
 	"net"
 
-	"github.com/goinsane/accepter"
+	"github.com/goinsane/netaccept"
 )
 
 func main() {
-	a := &accepter.Accepter{
-		Handler: accepter.HandlerFunc(func(ctx context.Context, conn net.Conn) {
+	a := &netaccept.NetAccept{
+		Handler: netaccept.HandlerFunc(func(ctx context.Context, conn net.Conn) {
 			for {
 				var b [32 * 1024]byte
 				n, err := conn.Read(b[:])
