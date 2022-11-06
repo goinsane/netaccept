@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -27,16 +26,6 @@ type NetAccept struct {
 	ctxCancel    context.CancelFunc
 	conns        map[net.Conn]struct{}
 	connsMu      sync.RWMutex
-}
-
-var (
-	maxTempDelay time.Duration
-)
-
-// SetMaxTempDelay sets maximum temporary error wait duration as concurrent-safe.
-// Zero or negative values mean to wait forever. By default, zero.
-func SetMaxTempDelay(d time.Duration) {
-	atomic.StoreInt64((*int64)(&maxTempDelay), int64(d))
 }
 
 // Shutdown gracefully shuts down the NetAccept without interrupting any
@@ -144,40 +133,19 @@ func (a *NetAccept) Serve(lis net.Listener) (err error) {
 
 	defer a.cancel()
 
-	var tempDelay, totalDelay time.Duration
-	for {
+	for a.ctx.Err() == nil {
 		var conn net.Conn
 		conn, err = lis.Accept()
 		if err != nil {
-			select {
-			case <-a.ctx.Done():
+			if a.ctx.Err() != nil {
 				err = nil
 				return
-			default:
 			}
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				maxDelay := time.Duration(atomic.LoadInt64((*int64)(&maxTempDelay)))
-				if maxDelay > 0 && totalDelay > maxDelay {
-					return
-				}
-				if tempDelay == 0 {
-					tempDelay = 5 * time.Millisecond
-				} else {
-					tempDelay *= 2
-				}
-				if max := 1 * time.Second; tempDelay > max {
-					tempDelay = max
-				}
-				time.Sleep(tempDelay)
-				totalDelay += tempDelay
-				continue
-			}
-			return
 		}
-		tempDelay = 0
-		totalDelay = 0
 		go a.serve(conn)
 	}
+
+	return
 }
 
 // ServeTLS accepts incoming connections on the Listener lis, creating a
