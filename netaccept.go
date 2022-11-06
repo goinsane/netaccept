@@ -39,20 +39,6 @@ func SetMaxTempDelay(d time.Duration) {
 	atomic.StoreInt64((*int64)(&maxTempDelay), int64(d))
 }
 
-// cancel cancels serving operation and closes listener once, then returns closing error.
-func (a *NetAccept) cancel() error {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	if a.lis == nil {
-		return nil
-	}
-	a.ctxCancel()
-	a.lisCloseOnce.Do(func() {
-		a.lisCloseErr = a.lis.Close()
-	})
-	return a.lisCloseErr
-}
-
 // Shutdown gracefully shuts down the NetAccept without interrupting any
 // connections. Shutdown works by first closing the NetAccept's underlying Listener, then
 // cancels the context on Serve method of Handler, and then waiting indefinitely for
@@ -238,4 +224,18 @@ func (a *NetAccept) serve(conn net.Conn) {
 	a.connsMu.Lock()
 	delete(a.conns, conn)
 	a.connsMu.Unlock()
+}
+
+// cancel cancels serving operation and closes listener once, then returns closing error.
+func (a *NetAccept) cancel() error {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.lis == nil {
+		return nil
+	}
+	a.ctxCancel()
+	a.lisCloseOnce.Do(func() {
+		a.lisCloseErr = a.lis.Close()
+	})
+	return a.lisCloseErr
 }
