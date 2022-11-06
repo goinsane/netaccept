@@ -18,9 +18,12 @@ type NetAccept struct {
 	// TLSConfig optionally provides a TLS configuration.
 	TLSConfig *tls.Config
 
+	// MaxConn provides maximum connection count. If it is zero, max connection is unlimited.
+	MaxConn int
+
 	mu           sync.RWMutex
 	lis          net.Listener
-	lisCloseOnce *sync.Once
+	lisCloseOnce sync.Once
 	lisCloseErr  error
 	ctx          context.Context
 	ctxCancel    context.CancelFunc
@@ -46,7 +49,7 @@ func (a *NetAccept) Shutdown(ctx context.Context) (err error) {
 		select {
 		case <-time.After(5 * time.Millisecond):
 			a.connsMu.RLock()
-			if len(a.conns) == 0 {
+			if len(a.conns) <= 0 {
 				a.connsMu.RUnlock()
 				return
 			}
@@ -115,15 +118,15 @@ func (a *NetAccept) ListenAndServeTLS(network, address string, certFile, keyFile
 // a.Handler to reply to them. Serve always closes lis unless returned error
 // is ErrAlreadyServed. Serve returns a nil error after Close or
 // Shutdown method called.
-func (a *NetAccept) Serve(lis net.Listener) (err error) {
+func (a *NetAccept) Serve(lis net.Listener) error {
+	var err error
+
 	a.mu.Lock()
 	if a.lis != nil {
-		err = ErrAlreadyServed
 		a.mu.Unlock()
-		return
+		return ErrAlreadyServed
 	}
 	a.lis = lis
-	a.lisCloseOnce = new(sync.Once)
 	a.ctx, a.ctxCancel = context.WithCancel(context.Background())
 	a.mu.Unlock()
 
@@ -134,18 +137,33 @@ func (a *NetAccept) Serve(lis net.Listener) (err error) {
 	defer a.cancel()
 
 	for a.ctx.Err() == nil {
+		if a.MaxConn > 0 {
+			a.connsMu.RLock()
+			connCount := len(a.conns)
+			a.connsMu.RUnlock()
+			if connCount >= a.MaxConn {
+				select {
+				case <-a.ctx.Done():
+					return nil
+				case <-time.After(5 * time.Millisecond):
+				}
+				continue
+			}
+		}
+
 		var conn net.Conn
 		conn, err = lis.Accept()
 		if err != nil {
 			if a.ctx.Err() != nil {
-				err = nil
-				return
+				return nil
 			}
+			return err
 		}
+
 		go a.serve(conn)
 	}
 
-	return
+	return nil
 }
 
 // ServeTLS accepts incoming connections on the Listener lis, creating a
@@ -180,6 +198,7 @@ func (a *NetAccept) ServeTLS(lis net.Listener, certFile, keyFile string) (err er
 	return a.Serve(tls.NewListener(lis, config))
 }
 
+// serve serves connection to handler.
 func (a *NetAccept) serve(conn net.Conn) {
 	a.connsMu.Lock()
 	a.conns[conn] = struct{}{}
