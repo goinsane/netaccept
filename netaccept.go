@@ -154,6 +154,14 @@ func (a *NetAccept) Serve(lis net.Listener) error {
 		var conn net.Conn
 		conn, err = lis.Accept()
 		if err != nil {
+			if oe, ok := err.(*net.OpError); ok && oe.Temporary() {
+				select {
+				case <-a.ctx.Done():
+					return nil
+				case <-time.After(5 * time.Millisecond):
+				}
+				continue
+			}
 			if a.ctx.Err() != nil {
 				return nil
 			}
