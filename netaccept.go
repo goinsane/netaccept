@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -19,38 +18,17 @@ type NetAccept struct {
 	// TLSConfig optionally provides a TLS configuration.
 	TLSConfig *tls.Config
 
+	// MaxConn provides maximum connection count. If it is zero, max connection is unlimited.
+	MaxConn int
+
 	mu           sync.RWMutex
 	lis          net.Listener
-	lisCloseOnce *sync.Once
+	lisCloseOnce sync.Once
 	lisCloseErr  error
 	ctx          context.Context
 	ctxCancel    context.CancelFunc
 	conns        map[net.Conn]struct{}
 	connsMu      sync.RWMutex
-}
-
-var (
-	maxTempDelay time.Duration
-)
-
-// SetMaxTempDelay sets maximum temporary error wait duration as concurrent-safe.
-// Zero or negative values mean to wait forever. By default, zero.
-func SetMaxTempDelay(d time.Duration) {
-	atomic.StoreInt64((*int64)(&maxTempDelay), int64(d))
-}
-
-// cancel cancels serving operation and closes listener once, then returns closing error.
-func (a *NetAccept) cancel() error {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	if a.lis == nil {
-		return nil
-	}
-	a.ctxCancel()
-	a.lisCloseOnce.Do(func() {
-		a.lisCloseErr = a.lis.Close()
-	})
-	return a.lisCloseErr
 }
 
 // Shutdown gracefully shuts down the NetAccept without interrupting any
@@ -71,7 +49,7 @@ func (a *NetAccept) Shutdown(ctx context.Context) (err error) {
 		select {
 		case <-time.After(5 * time.Millisecond):
 			a.connsMu.RLock()
-			if len(a.conns) == 0 {
+			if len(a.conns) <= 0 {
 				a.connsMu.RUnlock()
 				return
 			}
@@ -140,15 +118,15 @@ func (a *NetAccept) ListenAndServeTLS(network, address string, certFile, keyFile
 // a.Handler to reply to them. Serve always closes lis unless returned error
 // is ErrAlreadyServed. Serve returns a nil error after Close or
 // Shutdown method called.
-func (a *NetAccept) Serve(lis net.Listener) (err error) {
+func (a *NetAccept) Serve(lis net.Listener) error {
+	var err error
+
 	a.mu.Lock()
 	if a.lis != nil {
-		err = ErrAlreadyServed
 		a.mu.Unlock()
-		return
+		return ErrAlreadyServed
 	}
 	a.lis = lis
-	a.lisCloseOnce = new(sync.Once)
 	a.ctx, a.ctxCancel = context.WithCancel(context.Background())
 	a.mu.Unlock()
 
@@ -158,40 +136,42 @@ func (a *NetAccept) Serve(lis net.Listener) (err error) {
 
 	defer a.cancel()
 
-	var tempDelay, totalDelay time.Duration
-	for {
+	for a.ctx.Err() == nil {
+		if a.MaxConn > 0 {
+			a.connsMu.RLock()
+			connCount := len(a.conns)
+			a.connsMu.RUnlock()
+			if connCount >= a.MaxConn {
+				select {
+				case <-a.ctx.Done():
+					return nil
+				case <-time.After(5 * time.Millisecond):
+				}
+				continue
+			}
+		}
+
 		var conn net.Conn
 		conn, err = lis.Accept()
 		if err != nil {
-			select {
-			case <-a.ctx.Done():
-				err = nil
-				return
-			default:
-			}
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				maxDelay := time.Duration(atomic.LoadInt64((*int64)(&maxTempDelay)))
-				if maxDelay > 0 && totalDelay > maxDelay {
-					return
+			if oe, ok := err.(*net.OpError); ok && oe.Temporary() {
+				select {
+				case <-a.ctx.Done():
+					return nil
+				case <-time.After(5 * time.Millisecond):
 				}
-				if tempDelay == 0 {
-					tempDelay = 5 * time.Millisecond
-				} else {
-					tempDelay *= 2
-				}
-				if max := 1 * time.Second; tempDelay > max {
-					tempDelay = max
-				}
-				time.Sleep(tempDelay)
-				totalDelay += tempDelay
 				continue
 			}
-			return
+			if a.ctx.Err() != nil {
+				return nil
+			}
+			return err
 		}
-		tempDelay = 0
-		totalDelay = 0
+
 		go a.serve(conn)
 	}
+
+	return nil
 }
 
 // ServeTLS accepts incoming connections on the Listener lis, creating a
@@ -226,6 +206,7 @@ func (a *NetAccept) ServeTLS(lis net.Listener, certFile, keyFile string) (err er
 	return a.Serve(tls.NewListener(lis, config))
 }
 
+// serve serves connection to handler.
 func (a *NetAccept) serve(conn net.Conn) {
 	a.connsMu.Lock()
 	a.conns[conn] = struct{}{}
@@ -238,4 +219,18 @@ func (a *NetAccept) serve(conn net.Conn) {
 	a.connsMu.Lock()
 	delete(a.conns, conn)
 	a.connsMu.Unlock()
+}
+
+// cancel cancels serving operation and closes listener once, then returns closing error.
+func (a *NetAccept) cancel() error {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.lis == nil {
+		return nil
+	}
+	a.ctxCancel()
+	a.lisCloseOnce.Do(func() {
+		a.lisCloseErr = a.lis.Close()
+	})
+	return a.lisCloseErr
 }

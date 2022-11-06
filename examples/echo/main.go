@@ -1,6 +1,3 @@
-//go:build ignore
-// +build ignore
-
 package main
 
 import (
@@ -14,8 +11,10 @@ import (
 func main() {
 	a := &netaccept.NetAccept{
 		Handler: netaccept.HandlerFunc(func(ctx context.Context, conn net.Conn) {
+			log.Printf("connection accepted %q -> %q", conn.RemoteAddr(), conn.LocalAddr())
+			defer log.Printf("connection ended %q -> %q", conn.RemoteAddr(), conn.LocalAddr())
 			for {
-				var b [32 * 1024]byte
+				b := make([]byte, 32*1024)
 				n, err := conn.Read(b[:])
 				if err != nil {
 					break
