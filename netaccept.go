@@ -185,7 +185,9 @@ func (a *NetAccept) Serve(lis net.Listener) error {
 // nor TLSConfig.GetCertificate are populated. If the certificate is signed by
 // a certificate authority, the certFile should be the concatenation of the
 // NetAccept's certificate, any intermediates, and the CA's certificate.
-func (a *NetAccept) ServeTLS(lis net.Listener, certFile, keyFile string) (err error) {
+func (a *NetAccept) ServeTLS(lis net.Listener, certFile, keyFile string) error {
+	var err error
+
 	var config *tls.Config
 	if a.TLSConfig != nil {
 		config = a.TLSConfig.Clone()
@@ -198,8 +200,7 @@ func (a *NetAccept) ServeTLS(lis net.Listener, certFile, keyFile string) (err er
 		config.Certificates = make([]tls.Certificate, 1)
 		config.Certificates[0], err = tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			err = wrapTLSError(err)
-			return
+			return wrapTLSError(err)
 		}
 	}
 
