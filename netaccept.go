@@ -42,24 +42,24 @@ type Server struct {
 // When Shutdown is called, Serve, ServeTLS, ListenAndServe, and ListenAndServeTLS
 // immediately return nil. Make sure the program doesn't exit and waits
 // instead for Shutdown to return.
-func (a *Server) Shutdown(ctx context.Context) (err error) {
-	err = a.cancel()
+func (s *Server) Shutdown(ctx context.Context) (err error) {
+	err = s.cancel()
 
 	for {
 		select {
 		case <-time.After(5 * time.Millisecond):
-			a.connsMu.RLock()
-			if len(a.conns) <= 0 {
-				a.connsMu.RUnlock()
+			s.connsMu.RLock()
+			if len(s.conns) <= 0 {
+				s.connsMu.RUnlock()
 				return
 			}
-			a.connsMu.RUnlock()
+			s.connsMu.RUnlock()
 		case <-ctx.Done():
-			a.connsMu.RLock()
-			for conn := range a.conns {
+			s.connsMu.RLock()
+			for conn := range s.conns {
 				conn.Close()
 			}
-			a.connsMu.RUnlock()
+			s.connsMu.RUnlock()
 			err = ctx.Err()
 			return
 		}
@@ -71,14 +71,14 @@ func (a *Server) Shutdown(ctx context.Context) (err error) {
 //
 // Close returns any error returned from closing the Server's underlying
 // Listener.
-func (a *Server) Close() (err error) {
-	err = a.cancel()
+func (s *Server) Close() (err error) {
+	err = s.cancel()
 
-	a.connsMu.RLock()
-	for conn := range a.conns {
+	s.connsMu.RLock()
+	for conn := range s.conns {
 		conn.Close()
 	}
-	a.connsMu.RUnlock()
+	s.connsMu.RUnlock()
 
 	return
 }
@@ -86,13 +86,13 @@ func (a *Server) Close() (err error) {
 // ListenAndServe listens on the given network and address; and then calls
 // Serve to handle incoming connections. ListenAndServe returns a
 // nil error after Close or Shutdown method called.
-func (a *Server) ListenAndServe(network, address string) error {
+func (s *Server) ListenAndServe(network, address string) error {
 	lis, err := net.Listen(network, address)
 	if err != nil {
 		return err
 	}
 	defer lis.Close()
-	return a.Serve(lis)
+	return s.Serve(lis)
 }
 
 // ListenAndServeTLS listens on the given network and address; and
@@ -104,13 +104,13 @@ func (a *Server) ListenAndServe(network, address string) error {
 // signed by a certificate authority, the certFile should be the
 // concatenation of the Server's certificate, any intermediates, and
 // the CA's certificate.
-func (a *Server) ListenAndServeTLS(network, address string, certFile, keyFile string) error {
+func (s *Server) ListenAndServeTLS(network, address string, certFile, keyFile string) error {
 	lis, err := net.Listen(network, address)
 	if err != nil {
 		return err
 	}
 	defer lis.Close()
-	return a.ServeTLS(lis, certFile, keyFile)
+	return s.ServeTLS(lis, certFile, keyFile)
 }
 
 // Serve accepts incoming connections on the Listener lis, creating a new service
@@ -118,32 +118,32 @@ func (a *Server) ListenAndServeTLS(network, address string, certFile, keyFile st
 // a.Handler to reply to them. Serve always closes lis unless returned error
 // is ErrAlreadyServed. Serve returns a nil error after Close or
 // Shutdown method called.
-func (a *Server) Serve(lis net.Listener) error {
+func (s *Server) Serve(lis net.Listener) error {
 	var err error
 
-	a.mu.Lock()
-	if a.lis != nil {
-		a.mu.Unlock()
+	s.mu.Lock()
+	if s.lis != nil {
+		s.mu.Unlock()
 		return ErrAlreadyServed
 	}
-	a.lis = lis
-	a.ctx, a.ctxCancel = context.WithCancel(context.Background())
-	a.mu.Unlock()
+	s.lis = lis
+	s.ctx, s.ctxCancel = context.WithCancel(context.Background())
+	s.mu.Unlock()
 
-	a.connsMu.Lock()
-	a.conns = make(map[net.Conn]struct{})
-	a.connsMu.Unlock()
+	s.connsMu.Lock()
+	s.conns = make(map[net.Conn]struct{})
+	s.connsMu.Unlock()
 
-	defer a.cancel()
+	defer s.cancel()
 
-	for a.ctx.Err() == nil {
-		if a.MaxConn > 0 {
-			a.connsMu.RLock()
-			connCount := len(a.conns)
-			a.connsMu.RUnlock()
-			if connCount >= a.MaxConn {
+	for s.ctx.Err() == nil {
+		if s.MaxConn > 0 {
+			s.connsMu.RLock()
+			connCount := len(s.conns)
+			s.connsMu.RUnlock()
+			if connCount >= s.MaxConn {
 				select {
-				case <-a.ctx.Done():
+				case <-s.ctx.Done():
 					return nil
 				case <-time.After(5 * time.Millisecond):
 				}
@@ -156,19 +156,19 @@ func (a *Server) Serve(lis net.Listener) error {
 		if err != nil {
 			if oe, ok := err.(*net.OpError); ok && oe.Temporary() {
 				select {
-				case <-a.ctx.Done():
+				case <-s.ctx.Done():
 					return nil
 				case <-time.After(5 * time.Millisecond):
 				}
 				continue
 			}
-			if a.ctx.Err() != nil {
+			if s.ctx.Err() != nil {
 				return nil
 			}
 			return err
 		}
 
-		go a.serve(conn)
+		go s.serve(conn)
 	}
 
 	return nil
@@ -185,12 +185,12 @@ func (a *Server) Serve(lis net.Listener) error {
 // nor TLSConfig.GetCertificate are populated. If the certificate is signed by
 // a certificate authority, the certFile should be the concatenation of the
 // Server's certificate, any intermediates, and the CA's certificate.
-func (a *Server) ServeTLS(lis net.Listener, certFile, keyFile string) error {
+func (s *Server) ServeTLS(lis net.Listener, certFile, keyFile string) error {
 	var err error
 
 	var config *tls.Config
-	if a.TLSConfig != nil {
-		config = a.TLSConfig.Clone()
+	if s.TLSConfig != nil {
+		config = s.TLSConfig.Clone()
 	} else {
 		config = &tls.Config{}
 	}
@@ -204,34 +204,34 @@ func (a *Server) ServeTLS(lis net.Listener, certFile, keyFile string) error {
 		}
 	}
 
-	return a.Serve(tls.NewListener(lis, config))
+	return s.Serve(tls.NewListener(lis, config))
 }
 
 // serve serves connection to handler.
-func (a *Server) serve(conn net.Conn) {
-	a.connsMu.Lock()
-	a.conns[conn] = struct{}{}
-	a.connsMu.Unlock()
+func (s *Server) serve(conn net.Conn) {
+	s.connsMu.Lock()
+	s.conns[conn] = struct{}{}
+	s.connsMu.Unlock()
 
-	a.Handler.Serve(a.ctx, conn)
+	s.Handler.Serve(s.ctx, conn)
 
 	conn.Close()
 
-	a.connsMu.Lock()
-	delete(a.conns, conn)
-	a.connsMu.Unlock()
+	s.connsMu.Lock()
+	delete(s.conns, conn)
+	s.connsMu.Unlock()
 }
 
 // cancel cancels serving operation and closes listener once, then returns closing error.
-func (a *Server) cancel() error {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	if a.lis == nil {
+func (s *Server) cancel() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.lis == nil {
 		return nil
 	}
-	a.ctxCancel()
-	a.lisCloseOnce.Do(func() {
-		a.lisCloseErr = a.lis.Close()
+	s.ctxCancel()
+	s.lisCloseOnce.Do(func() {
+		s.lisCloseErr = s.lis.Close()
 	})
-	return a.lisCloseErr
+	return s.lisCloseErr
 }
