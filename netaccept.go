@@ -1,4 +1,4 @@
-// Package netaccept provides NetAccept struct for accepting connections from net.Listener.
+// Package netaccept provides Server for accepting connections from net.Listener.
 package netaccept
 
 import (
@@ -9,9 +9,9 @@ import (
 	"time"
 )
 
-// An NetAccept defines parameters to accept connections.
+// An Server defines parameters to accept connections.
 // It is similar with GoLang's http.Server.
-type NetAccept struct {
+type Server struct {
 	// Handler to invoke.
 	Handler Handler
 
@@ -31,18 +31,18 @@ type NetAccept struct {
 	connsMu      sync.RWMutex
 }
 
-// Shutdown gracefully shuts down the NetAccept without interrupting any
-// connections. Shutdown works by first closing the NetAccept's underlying Listener, then
+// Shutdown gracefully shuts down the Server without interrupting any
+// connections. Shutdown works by first closing the Server's underlying Listener, then
 // cancels the context on Serve method of Handler, and then waiting indefinitely for
 // connections to exit Serve method of Handler and then close. If the provided
 // context expires before the shutdown is complete, Shutdown returns the
 // context's error, otherwise it returns any error returned from closing the
-// NetAccept's underlying Listener.
+// Server's underlying Listener.
 //
 // When Shutdown is called, Serve, ServeTLS, ListenAndServe, and ListenAndServeTLS
 // immediately return nil. Make sure the program doesn't exit and waits
 // instead for Shutdown to return.
-func (a *NetAccept) Shutdown(ctx context.Context) (err error) {
+func (a *Server) Shutdown(ctx context.Context) (err error) {
 	err = a.cancel()
 
 	for {
@@ -66,12 +66,12 @@ func (a *NetAccept) Shutdown(ctx context.Context) (err error) {
 	}
 }
 
-// Close immediately closes the NetAccept's underlying Listener and any connections.
+// Close immediately closes the Server's underlying Listener and any connections.
 // For a graceful shutdown, use Shutdown.
 //
-// Close returns any error returned from closing the NetAccept's underlying
+// Close returns any error returned from closing the Server's underlying
 // Listener.
-func (a *NetAccept) Close() (err error) {
+func (a *Server) Close() (err error) {
 	err = a.cancel()
 
 	a.connsMu.RLock()
@@ -86,7 +86,7 @@ func (a *NetAccept) Close() (err error) {
 // ListenAndServe listens on the given network and address; and then calls
 // Serve to handle incoming connections. ListenAndServe returns a
 // nil error after Close or Shutdown method called.
-func (a *NetAccept) ListenAndServe(network, address string) error {
+func (a *Server) ListenAndServe(network, address string) error {
 	lis, err := net.Listen(network, address)
 	if err != nil {
 		return err
@@ -99,12 +99,12 @@ func (a *NetAccept) ListenAndServe(network, address string) error {
 // then calls ServeTLS to handle incoming TLS connections.
 //
 // Filenames containing a certificate and matching private key for the
-// NetAccept must be provided if neither the NetAccept's TLSConfig.Certificates
+// Server must be provided if neither the Server's TLSConfig.Certificates
 // nor TLSConfig.GetCertificate are populated. If the certificate is
 // signed by a certificate authority, the certFile should be the
-// concatenation of the NetAccept's certificate, any intermediates, and
+// concatenation of the Server's certificate, any intermediates, and
 // the CA's certificate.
-func (a *NetAccept) ListenAndServeTLS(network, address string, certFile, keyFile string) error {
+func (a *Server) ListenAndServeTLS(network, address string, certFile, keyFile string) error {
 	lis, err := net.Listen(network, address)
 	if err != nil {
 		return err
@@ -118,7 +118,7 @@ func (a *NetAccept) ListenAndServeTLS(network, address string, certFile, keyFile
 // a.Handler to reply to them. Serve always closes lis unless returned error
 // is ErrAlreadyServed. Serve returns a nil error after Close or
 // Shutdown method called.
-func (a *NetAccept) Serve(lis net.Listener) error {
+func (a *Server) Serve(lis net.Listener) error {
 	var err error
 
 	a.mu.Lock()
@@ -181,11 +181,11 @@ func (a *NetAccept) Serve(lis net.Listener) error {
 // Close or Shutdown method called.
 //
 // Additionally, files containing a certificate and matching private key for
-// the NetAccept must be provided if neither the NetAccept's TLSConfig.Certificates
+// the Server must be provided if neither the Server's TLSConfig.Certificates
 // nor TLSConfig.GetCertificate are populated. If the certificate is signed by
 // a certificate authority, the certFile should be the concatenation of the
-// NetAccept's certificate, any intermediates, and the CA's certificate.
-func (a *NetAccept) ServeTLS(lis net.Listener, certFile, keyFile string) error {
+// Server's certificate, any intermediates, and the CA's certificate.
+func (a *Server) ServeTLS(lis net.Listener, certFile, keyFile string) error {
 	var err error
 
 	var config *tls.Config
@@ -208,7 +208,7 @@ func (a *NetAccept) ServeTLS(lis net.Listener, certFile, keyFile string) error {
 }
 
 // serve serves connection to handler.
-func (a *NetAccept) serve(conn net.Conn) {
+func (a *Server) serve(conn net.Conn) {
 	a.connsMu.Lock()
 	a.conns[conn] = struct{}{}
 	a.connsMu.Unlock()
@@ -223,7 +223,7 @@ func (a *NetAccept) serve(conn net.Conn) {
 }
 
 // cancel cancels serving operation and closes listener once, then returns closing error.
-func (a *NetAccept) cancel() error {
+func (a *Server) cancel() error {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	if a.lis == nil {
