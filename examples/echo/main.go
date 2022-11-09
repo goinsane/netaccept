@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	a := &netaccept.NetAccept{
+	a := &netaccept.Server{
 		Handler: netaccept.HandlerFunc(func(ctx context.Context, conn net.Conn) {
 			log.Printf("connection accepted %q -> %q", conn.RemoteAddr(), conn.LocalAddr())
 			defer log.Printf("connection ended %q -> %q", conn.RemoteAddr(), conn.LocalAddr())
