@@ -44,24 +44,24 @@ type Server struct {
 //
 // Once Shutdown has been called on a server, it may not be reused;
 // future calls to methods such as Serve will return ErrServerClosed.
-func (s *Server) Shutdown(ctx context.Context) (err error) {
-	err = s.cancel()
+func (srv *Server) Shutdown(ctx context.Context) (err error) {
+	err = srv.cancel()
 
 	for {
 		select {
 		case <-time.After(5 * time.Millisecond):
-			s.connsMu.RLock()
-			if len(s.conns) <= 0 {
-				s.connsMu.RUnlock()
+			srv.connsMu.RLock()
+			if len(srv.conns) <= 0 {
+				srv.connsMu.RUnlock()
 				return
 			}
-			s.connsMu.RUnlock()
+			srv.connsMu.RUnlock()
 		case <-ctx.Done():
-			s.connsMu.RLock()
-			for conn := range s.conns {
+			srv.connsMu.RLock()
+			for conn := range srv.conns {
 				conn.Close()
 			}
-			s.connsMu.RUnlock()
+			srv.connsMu.RUnlock()
 			err = ctx.Err()
 			return
 		}
@@ -73,14 +73,14 @@ func (s *Server) Shutdown(ctx context.Context) (err error) {
 //
 // Close returns any error returned from closing the Server's underlying
 // Listener(s).
-func (s *Server) Close() (err error) {
-	err = s.cancel()
+func (srv *Server) Close() (err error) {
+	err = srv.cancel()
 
-	s.connsMu.RLock()
-	for conn := range s.conns {
+	srv.connsMu.RLock()
+	for conn := range srv.conns {
 		conn.Close()
 	}
-	s.connsMu.RUnlock()
+	srv.connsMu.RUnlock()
 
 	return
 }
@@ -88,13 +88,13 @@ func (s *Server) Close() (err error) {
 // ListenAndServe listens on the given network and address; and then calls Serve to handle incoming connections.
 //
 // ListenAndServe always returns a non-nil error. After Shutdown or Close, the returned error is ErrServerClosed.
-func (s *Server) ListenAndServe(network, address string) error {
+func (srv *Server) ListenAndServe(network, address string) error {
 	lis, err := net.Listen(network, address)
 	if err != nil {
 		return err
 	}
 	defer lis.Close()
-	return s.Serve(lis)
+	return srv.Serve(lis)
 }
 
 // ListenAndServeTLS listens on the given network and address; and
@@ -108,13 +108,13 @@ func (s *Server) ListenAndServe(network, address string) error {
 // the CA's certificate.
 //
 // ListenAndServeTLS always returns a non-nil error. After Shutdown or Close, the returned error is ErrServerClosed.
-func (s *Server) ListenAndServeTLS(network, address string, certFile, keyFile string) error {
+func (srv *Server) ListenAndServeTLS(network, address string, certFile, keyFile string) error {
 	lis, err := net.Listen(network, address)
 	if err != nil {
 		return err
 	}
 	defer lis.Close()
-	return s.ServeTLS(lis, certFile, keyFile)
+	return srv.ServeTLS(lis, certFile, keyFile)
 }
 
 // Serve accepts incoming connections on the Listener lis, creating a new service
@@ -123,36 +123,36 @@ func (s *Server) ListenAndServeTLS(network, address string, certFile, keyFile st
 //
 // Serve always returns a non-nil error and closes l. After Shutdown or Close,
 // the returned error is ErrServerClosed.
-func (s *Server) Serve(lis net.Listener) error {
+func (srv *Server) Serve(lis net.Listener) error {
 	var err error
 
 	defer lis.Close()
 
-	s.mu.Lock()
-	if s.cancelled {
-		s.mu.Unlock()
+	srv.mu.Lock()
+	if srv.cancelled {
+		srv.mu.Unlock()
 		return ErrServerClosed
 	}
-	if !s.initialized {
-		s.initialized = true
-		s.ctx, s.ctxCancel = context.WithCancel(context.Background())
-		s.listeners = make([]net.Listener, 0, 4096)
+	if !srv.initialized {
+		srv.initialized = true
+		srv.ctx, srv.ctxCancel = context.WithCancel(context.Background())
+		srv.listeners = make([]net.Listener, 0, 4096)
 	}
-	s.listeners = append(s.listeners, &onceCloseListener{Listener: lis})
-	s.mu.Unlock()
+	srv.listeners = append(srv.listeners, &onceCloseListener{Listener: lis})
+	srv.mu.Unlock()
 
-	s.connsMu.Lock()
-	s.conns = make(map[net.Conn]struct{})
-	s.connsMu.Unlock()
+	srv.connsMu.Lock()
+	srv.conns = make(map[net.Conn]struct{})
+	srv.connsMu.Unlock()
 
-	for s.ctx.Err() == nil {
-		if s.MaxConn > 0 {
-			s.connsMu.RLock()
-			connCount := len(s.conns)
-			s.connsMu.RUnlock()
-			if connCount >= s.MaxConn {
+	for srv.ctx.Err() == nil {
+		if srv.MaxConn > 0 {
+			srv.connsMu.RLock()
+			connCount := len(srv.conns)
+			srv.connsMu.RUnlock()
+			if connCount >= srv.MaxConn {
 				select {
-				case <-s.ctx.Done():
+				case <-srv.ctx.Done():
 					return nil
 				case <-time.After(5 * time.Millisecond):
 				}
@@ -165,19 +165,19 @@ func (s *Server) Serve(lis net.Listener) error {
 		if err != nil {
 			if oe, ok := err.(*net.OpError); ok && oe.Temporary() {
 				select {
-				case <-s.ctx.Done():
+				case <-srv.ctx.Done():
 					return nil
 				case <-time.After(5 * time.Millisecond):
 				}
 				continue
 			}
-			if s.ctx.Err() != nil {
+			if srv.ctx.Err() != nil {
 				return nil
 			}
 			return err
 		}
 
-		go s.serve(conn)
+		go srv.serve(conn)
 	}
 
 	return nil
@@ -195,12 +195,12 @@ func (s *Server) Serve(lis net.Listener) error {
 //
 // ServeTLS always closes lis unless returned error is TLSError.
 // ServeTLS always returns a non-nil error. After Shutdown or Close, the returned error is ErrServerClosed.
-func (s *Server) ServeTLS(lis net.Listener, certFile, keyFile string) error {
+func (srv *Server) ServeTLS(lis net.Listener, certFile, keyFile string) error {
 	var err error
 
 	var config *tls.Config
-	if s.TLSConfig != nil {
-		config = s.TLSConfig.Clone()
+	if srv.TLSConfig != nil {
+		config = srv.TLSConfig.Clone()
 	} else {
 		config = &tls.Config{}
 	}
@@ -214,34 +214,34 @@ func (s *Server) ServeTLS(lis net.Listener, certFile, keyFile string) error {
 		}
 	}
 
-	return s.Serve(tls.NewListener(lis, config))
+	return srv.Serve(tls.NewListener(lis, config))
 }
 
 // serve serves connection to handler.
-func (s *Server) serve(conn net.Conn) {
-	s.connsMu.Lock()
-	s.conns[conn] = struct{}{}
-	s.connsMu.Unlock()
+func (srv *Server) serve(conn net.Conn) {
+	srv.connsMu.Lock()
+	srv.conns[conn] = struct{}{}
+	srv.connsMu.Unlock()
 
-	s.Handler.Serve(s.ctx, conn)
+	srv.Handler.Serve(srv.ctx, conn)
 
 	conn.Close()
 
-	s.connsMu.Lock()
-	delete(s.conns, conn)
-	s.connsMu.Unlock()
+	srv.connsMu.Lock()
+	delete(srv.conns, conn)
+	srv.connsMu.Unlock()
 }
 
 // cancel cancels serving operation and closes listener once, then returns closing error.
-func (s *Server) cancel() (err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.cancelled = true
-	if !s.initialized {
+func (srv *Server) cancel() (err error) {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	srv.cancelled = true
+	if !srv.initialized {
 		return nil
 	}
-	s.ctxCancel()
-	for _, lis := range s.listeners {
+	srv.ctxCancel()
+	for _, lis := range srv.listeners {
 		if l, ok := lis.(*onceCloseListener); ok {
 			err = l.Close()
 		} else {
