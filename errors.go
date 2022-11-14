@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	// ErrAlreadyServed is returned when Serve or ServeTLS method has been already called
-	ErrAlreadyServed = errors.New("already served")
+	// ErrServerClosed is returned by the Server's Serve, ServeTLS, ListenAndServe, and ListenAndServeTLS methods after a call to Shutdown or Close.
+	ErrServerClosed = errors.New("server closed")
 )
 
 // TLSError is returned when a method fails with TLS error

@@ -20,14 +20,15 @@ type Server struct {
 	// MaxConn provides maximum connection count. If it is zero, max connection is unlimited.
 	MaxConn int
 
-	mu           sync.RWMutex
-	lis          net.Listener
-	lisCloseOnce sync.Once
-	lisCloseErr  error
-	ctx          context.Context
-	ctxCancel    context.CancelFunc
-	conns        map[net.Conn]struct{}
-	connsMu      sync.RWMutex
+	mu          sync.Mutex
+	initialized bool
+	cancelled   bool
+	ctx         context.Context
+	ctxCancel   context.CancelFunc
+	listeners   []net.Listener
+
+	conns   map[net.Conn]struct{}
+	connsMu sync.RWMutex
 }
 
 // Shutdown gracefully shuts down the Server without interrupting any
@@ -120,20 +121,24 @@ func (s *Server) ListenAndServeTLS(network, address string, certFile, keyFile st
 func (s *Server) Serve(lis net.Listener) error {
 	var err error
 
+	defer lis.Close()
+
 	s.mu.Lock()
-	if s.lis != nil {
+	if s.cancelled {
 		s.mu.Unlock()
-		return ErrAlreadyServed
+		return ErrServerClosed
 	}
-	s.lis = lis
-	s.ctx, s.ctxCancel = context.WithCancel(context.Background())
+	if !s.initialized {
+		s.initialized = true
+		s.ctx, s.ctxCancel = context.WithCancel(context.Background())
+		s.listeners = make([]net.Listener, 0, 4096)
+	}
+	s.listeners = append(s.listeners, &onceCloseListener{Listener: lis})
 	s.mu.Unlock()
 
 	s.connsMu.Lock()
 	s.conns = make(map[net.Conn]struct{})
 	s.connsMu.Unlock()
-
-	defer s.cancel()
 
 	for s.ctx.Err() == nil {
 		if s.MaxConn > 0 {
@@ -222,15 +227,20 @@ func (s *Server) serve(conn net.Conn) {
 }
 
 // cancel cancels serving operation and closes listener once, then returns closing error.
-func (s *Server) cancel() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.lis == nil {
+func (s *Server) cancel() (err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cancelled = true
+	if !s.initialized {
 		return nil
 	}
 	s.ctxCancel()
-	s.lisCloseOnce.Do(func() {
-		s.lisCloseErr = s.lis.Close()
-	})
-	return s.lisCloseErr
+	for _, lis := range s.listeners {
+		if l, ok := lis.(*onceCloseListener); ok {
+			err = l.Close()
+		} else {
+			err = lis.Close()
+		}
+	}
+	return
 }
