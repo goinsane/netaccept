@@ -32,16 +32,18 @@ type Server struct {
 }
 
 // Shutdown gracefully shuts down the Server without interrupting any
-// connections. Shutdown works by first closing the Server's underlying Listener, then
-// cancels the context on Serve method of Handler, and then waiting indefinitely for
-// connections to exit Serve method of Handler and then close. If the provided
+// connections. Shutdown works by first closing all open listeners, and then waiting indefinitely for
+// connections to exit Serve method of Handler and then shut down. If the provided
 // context expires before the shutdown is complete, Shutdown returns the
 // context's error, otherwise it returns any error returned from closing the
-// Server's underlying Listener.
+// Server's underlying Listener(s).
 //
 // When Shutdown is called, Serve, ServeTLS, ListenAndServe, and ListenAndServeTLS
-// immediately return nil. Make sure the program doesn't exit and waits
+// immediately return ErrServerClosed. Make sure the program doesn't exit and waits
 // instead for Shutdown to return.
+//
+// Once Shutdown has been called on a server, it may not be reused;
+// future calls to methods such as Serve will return ErrServerClosed.
 func (s *Server) Shutdown(ctx context.Context) (err error) {
 	err = s.cancel()
 
@@ -66,11 +68,11 @@ func (s *Server) Shutdown(ctx context.Context) (err error) {
 	}
 }
 
-// Close immediately closes the Server's underlying Listener and any connections.
+// Close immediately closes all active net.Listeners and any connections.
 // For a graceful shutdown, use Shutdown.
 //
 // Close returns any error returned from closing the Server's underlying
-// Listener.
+// Listener(s).
 func (s *Server) Close() (err error) {
 	err = s.cancel()
 
@@ -83,9 +85,9 @@ func (s *Server) Close() (err error) {
 	return
 }
 
-// ListenAndServe listens on the given network and address; and then calls
-// Serve to handle incoming connections. ListenAndServe returns a
-// nil error after Close or Shutdown method called.
+// ListenAndServe listens on the given network and address; and then calls Serve to handle incoming connections.
+//
+// ListenAndServe always returns a non-nil error. After Shutdown or Close, the returned error is ErrServerClosed.
 func (s *Server) ListenAndServe(network, address string) error {
 	lis, err := net.Listen(network, address)
 	if err != nil {
@@ -104,6 +106,8 @@ func (s *Server) ListenAndServe(network, address string) error {
 // signed by a certificate authority, the certFile should be the
 // concatenation of the Server's certificate, any intermediates, and
 // the CA's certificate.
+//
+// ListenAndServeTLS always returns a non-nil error. After Shutdown or Close, the returned error is ErrServerClosed.
 func (s *Server) ListenAndServeTLS(network, address string, certFile, keyFile string) error {
 	lis, err := net.Listen(network, address)
 	if err != nil {
@@ -115,9 +119,10 @@ func (s *Server) ListenAndServeTLS(network, address string, certFile, keyFile st
 
 // Serve accepts incoming connections on the Listener lis, creating a new service
 // goroutine for each. The service goroutines read requests and then call
-// a.Handler to reply to them. Serve always closes lis unless returned error
-// is ErrAlreadyServed. Serve returns a nil error after Close or
-// Shutdown method called.
+// srv.Handler to reply to them.
+//
+// Serve always returns a non-nil error and closes l. After Shutdown or Close,
+// the returned error is ErrServerClosed.
 func (s *Server) Serve(lis net.Listener) error {
 	var err error
 
@@ -180,15 +185,16 @@ func (s *Server) Serve(lis net.Listener) error {
 
 // ServeTLS accepts incoming connections on the Listener lis, creating a
 // new service goroutine for each. The service goroutines read requests and
-// then call a.Handler to reply to them. ServeTLS always closes lis unless returned error
-// is ErrAlreadyServed or as TLSError. ServeTLS returns a nil error after
-// Close or Shutdown method called.
+// then call srv.Handler to reply to them.
 //
-// Additionally, files containing a certificate and matching private key for
+// Files containing a certificate and matching private key for
 // the Server must be provided if neither the Server's TLSConfig.Certificates
 // nor TLSConfig.GetCertificate are populated. If the certificate is signed by
 // a certificate authority, the certFile should be the concatenation of the
-// Server's certificate, any intermediates, and the CA's certificate.
+// server's certificate, any intermediates, and the CA's certificate.
+//
+// ServeTLS always closes lis unless returned error is TLSError.
+// ServeTLS always returns a non-nil error. After Shutdown or Close, the returned error is ErrServerClosed.
 func (s *Server) ServeTLS(lis net.Listener, certFile, keyFile string) error {
 	var err error
 
