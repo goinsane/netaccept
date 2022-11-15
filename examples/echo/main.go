@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	a := &netaccept.Server{
+	srv := &netaccept.Server{
 		Handler: netaccept.HandlerFunc(func(ctx context.Context, conn net.Conn) {
 			log.Printf("connection accepted %q -> %q", conn.RemoteAddr(), conn.LocalAddr())
 			defer log.Printf("connection ended %q -> %q", conn.RemoteAddr(), conn.LocalAddr())
@@ -29,5 +29,5 @@ func main() {
 			}
 		}),
 	}
-	log.Fatal(a.ListenAndServe("tcp", ":1234"))
+	log.Fatal(srv.ListenAndServe("tcp", ":1234"))
 }
