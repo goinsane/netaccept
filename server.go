@@ -121,7 +121,7 @@ func (srv *Server) ListenAndServeTLS(network, address string, certFile, keyFile 
 // goroutine for each. The service goroutines read requests and then call
 // srv.Handler to reply to them.
 //
-// Serve always returns a non-nil error and closes l. After Shutdown or Close,
+// Serve always returns a non-nil error and closes lis. After Shutdown or Close,
 // the returned error is ErrServerClosed.
 func (srv *Server) Serve(lis net.Listener) error {
 	var err error
@@ -153,7 +153,7 @@ func (srv *Server) Serve(lis net.Listener) error {
 			if connCount >= srv.MaxConn {
 				select {
 				case <-srv.ctx.Done():
-					return nil
+					return ErrServerClosed
 				case <-time.After(5 * time.Millisecond):
 				}
 				continue
@@ -166,13 +166,13 @@ func (srv *Server) Serve(lis net.Listener) error {
 			if oe, ok := err.(*net.OpError); ok && oe.Temporary() {
 				select {
 				case <-srv.ctx.Done():
-					return nil
+					return ErrServerClosed
 				case <-time.After(5 * time.Millisecond):
 				}
 				continue
 			}
 			if srv.ctx.Err() != nil {
-				return nil
+				return ErrServerClosed
 			}
 			return err
 		}
@@ -180,7 +180,7 @@ func (srv *Server) Serve(lis net.Listener) error {
 		go srv.serve(conn)
 	}
 
-	return nil
+	return ErrServerClosed
 }
 
 // ServeTLS accepts incoming connections on the Listener lis, creating a
