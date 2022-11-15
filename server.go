@@ -21,8 +21,8 @@ type Server struct {
 	MaxConn int
 
 	mu          sync.Mutex
-	initialized bool
 	cancelled   bool
+	initialized bool
 	ctx         context.Context
 	ctxCancel   context.CancelFunc
 	listeners   []net.Listener
@@ -73,6 +73,9 @@ func (srv *Server) Shutdown(ctx context.Context) (err error) {
 //
 // Close returns any error returned from closing the Server's underlying
 // Listener(s).
+//
+// When Close is called, Serve, ServeTLS, ListenAndServe, and ListenAndServeTLS
+// immediately return ErrServerClosed.
 //
 // Once Close has been called on a server, it may not be reused;
 // future calls to methods such as Serve will return ErrServerClosed.
@@ -239,6 +242,9 @@ func (srv *Server) serve(conn net.Conn) {
 func (srv *Server) cancel() (err error) {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
+	if srv.cancelled {
+		return nil
+	}
 	srv.cancelled = true
 	if !srv.initialized {
 		return nil
