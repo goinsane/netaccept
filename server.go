@@ -73,6 +73,9 @@ func (srv *Server) Shutdown(ctx context.Context) (err error) {
 //
 // Close returns any error returned from closing the Server's underlying
 // Listener(s).
+//
+// Once Close has been called on a server, it may not be reused;
+// future calls to methods such as Serve will return ErrServerClosed.
 func (srv *Server) Close() (err error) {
 	err = srv.cancel()
 
