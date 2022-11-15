@@ -229,9 +229,7 @@ func (srv *Server) serve(conn net.Conn) {
 	srv.conns[conn] = struct{}{}
 	srv.connsMu.Unlock()
 
-	if srv.Handler != nil {
-		srv.Handler.Serve(srv.ctx, conn)
-	}
+	srv.Handler.Serve(conn)
 
 	conn.Close()
 
