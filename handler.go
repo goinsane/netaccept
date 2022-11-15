@@ -14,7 +14,7 @@ type Handler interface {
 // is a Handler that calls f.
 type HandlerFunc func(conn net.Conn)
 
-// Serve calls f(ctx, conn)
+// Serve calls f(conn)
 func (f HandlerFunc) Serve(conn net.Conn) {
 	f(conn)
 }
