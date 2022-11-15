@@ -2,14 +2,19 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
+	"os"
+	"os/signal"
+	"sync"
+	"time"
 
 	"github.com/goinsane/netaccept"
 )
 
 func main() {
-	a := &netaccept.Server{
+	srv := &netaccept.Server{
 		Handler: netaccept.HandlerFunc(func(ctx context.Context, conn net.Conn) {
 			log.Printf("connection accepted %q -> %q", conn.RemoteAddr(), conn.LocalAddr())
 			defer log.Printf("connection ended %q -> %q", conn.RemoteAddr(), conn.LocalAddr())
@@ -29,5 +34,23 @@ func main() {
 			}
 		}),
 	}
-	log.Fatal(a.ListenAndServe("tcp", ":1234"))
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+		defer cancel()
+		<-ctx.Done()
+		termCtx, termCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer termCancel()
+		err := srv.Shutdown(termCtx)
+		if err != nil {
+			log.Print(fmt.Errorf("shutdown error: %w", err))
+		}
+	}()
+	err := srv.ListenAndServe("tcp", ":1234")
+	if err != netaccept.ErrServerClosed {
+		log.Print(err)
+	}
+	wg.Wait()
 }
